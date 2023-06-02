@@ -1,0 +1,7 @@
+rootProject.name = 'lock_dialer_style'
+include ':react-native-hole-view'
+project(':react-native-hole-view').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-hole-view/android')
+include ':react-native-hole-view'
+project(':react-native-hole-view').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-hole-view/android')
+apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesSettingsGradle(settings)
+include ':app'
