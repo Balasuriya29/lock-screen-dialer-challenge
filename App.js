@@ -1,5 +1,12 @@
 import React, {useMemo, useRef, useState} from 'react';
-import {View, Dimensions, Text, Pressable} from 'react-native';
+import {
+  View,
+  Dimensions,
+  Text,
+  Pressable,
+  ToastAndroid,
+  Button,
+} from 'react-native';
 import {
   GestureHandlerRootView,
   PanGestureHandler,
@@ -9,11 +16,11 @@ import Animated, {
   runOnJS,
   useAnimatedGestureHandler,
   useAnimatedStyle,
-  useDerivedValue,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
 
+//Global Utils
 const {width, height} = Dimensions.get('screen');
 
 const outerCircleRadius = width * 0.9;
@@ -21,22 +28,21 @@ const innerCircleRadius = width * 0.55;
 const midPt = (outerCircleRadius - innerCircleRadius) / 2;
 const centerOfSquare = outerCircleRadius / 2 - 25;
 const mulForRad = 180 / Math.PI;
-const twoPI = 2 * Math.PI;
-const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, -1];
-const stopPosition = [1, 2, 3, 20, 50, 80, 110, 140, 170, 0, -1];
-let startAngle = 0;
-let isStart = 1;
 
 const NPABS = [];
+const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, -1];
+const offsetAngles = [120, -150, -120, -90, -60, -30, 0, 30, 60, 90];
+const endAngles = [325, 65, 95, 125, 155, 185, 215, 245, 275, 305];
+const correctPassword = 1729;
 
 function App({}) {
   //Utils
-
   const [numberPosition, setNumbersPosition] = useState([]);
   const [numbersPositionABS, setNumbersPositionABS] = useState([]);
-  const [offsetAngle, setOffsetAngle] = useState(0);
   const [password, setPassword] = useState('');
   const [currentNumber, setCurrentNumber] = useState(-1);
+  const [centerPoint, setCenterPoint] = useState({});
+  const centerPointRef = useRef();
 
   //Handlers
   const findTheNearestNumber = event => {
@@ -46,44 +52,45 @@ function App({}) {
         elem.absoluteX - 30 < event.absoluteX &&
         elem.absoluteY + 30 > event.absoluteY &&
         elem.absoluteY - 30 < event.absoluteY
-      ) {
-        // console.log(elem.number);
-        setPassword(password + elem.number.toString());
-        setOffsetAngle((9 - elem.number) * 30);
+      )
         setCurrentNumber(elem.number);
-      }
     });
   };
 
-  const getAngle = ({event, context}) => {
-    let xDiff = event.absoluteX - context[0];
-    let yDiff = event.absoluteY - context[1];
-    let angle = Math.atan(yDiff / xDiff) * mulForRad;
-    console.log(currentNumber);
-    // console.log('xDiff : ---> ' + xDiff);
-    // console.log('yDiff : ---> ' + yDiff);
+  const getAngle = event => {
+    //Basic Angle Calculation using finding the differences in two coordinate system
+    const _x = centerPoint.px - event.absoluteX;
+    const _y = centerPoint.py - event.absoluteY;
+    let angle = Math.atan(_y / _x) * mulForRad;
 
-    // if (isStart) {
-    //   startAngle = angle;
-    //   angle = isStart = 0;
-    // } else {
-    //   console.log('Start: ---> ' + startAngle);
-    //   console.log('Previous : ---> ' + angle);
-    //   angle -= startAngle;
-    // }
+    if (currentNumber % 9 === 0 && _x < 0 && _y < 0) {
+      //Edge Case for 0 & 9
+      angle -= 180;
+    } else if (_x < 0) {
+      angle += 180;
+    }
+    if (angle + offsetAngles[currentNumber] < 0) angle += 360; // To Support Complete Rotation
 
-    if (angle < 0) angle += 180;
-
-    console.log('Next : ---> ' + angle);
-    rotateZAxis.value = angle;
+    rotateZAxis.value = angle + offsetAngles[currentNumber];
   };
 
   const setAngle = angle => {
-    rotateZAxis.value = withTiming(angle);
-    isStart = 1;
-    startAngle = 0;
-    console.log('======================================================');
+    rotateZAxis.value = withTiming(angle, {duration: 800});
     setCurrentNumber(-1);
+  };
+
+  const setAndCheckPassword = password => {
+    if (password === correctPassword.toString()) {
+      ToastAndroid.show('Password is Correct 👍', ToastAndroid.SHORT);
+      setPassword('');
+      return;
+    } else if (password.length === 4) {
+      ToastAndroid.show('Password is Incorrect ❌', ToastAndroid.BOTTOM);
+      setPassword('');
+      return;
+    }
+
+    setPassword(password);
   };
 
   //Rotate Animated Values
@@ -101,21 +108,22 @@ function App({}) {
 
   const rotationGestureEvent = useAnimatedGestureHandler({
     onStart: (e, c) => {
-      c.startX = e.absoluteX;
-      c.startY = e.absoluteY;
-
+      c.isEnd = false;
       if (currentNumber == -1) runOnJS(findTheNearestNumber)(e);
     },
     onActive: (e, c) => {
-      if (
-        rotateZAxis.value >= 0 &&
-        rotateZAxis.value < 170 &&
-        currentNumber != -1
-      )
-        runOnJS(getAngle)({event: e, context: [c.startX, c.startY]});
+      if (currentNumber != -1 && rotateZAxis.value < endAngles[currentNumber]) {
+        runOnJS(getAngle)(e);
+        if (c.isEnd) c.isEnd = false;
+      } else {
+        if (!c.isEnd) c.isEnd = true;
+      }
     },
     onEnd: (e, c) => {
       runOnJS(setAngle)(0);
+      if (currentNumber != -1 && c.isEnd) {
+        runOnJS(setAndCheckPassword)(password + currentNumber.toString());
+      }
     },
   });
 
@@ -139,6 +147,12 @@ function App({}) {
       });
     });
 
+    setTimeout(() => {
+      centerPointRef.current.measure((fx, fy, width, height, px, py) =>
+        setCenterPoint({px: px, py: py}),
+      );
+    }, 0);
+
     setNumbersPosition([...temp]);
   }, []);
 
@@ -147,10 +161,19 @@ function App({}) {
       <View
         style={{
           flex: 1,
-          justifyContent: 'center',
           alignItems: 'center',
+          justifyContent: 'center',
           backgroundColor: 'white',
         }}>
+        <View style={{marginBottom: 100}}>
+          <Text style={{marginBottom: 20}}>Password: {password}</Text>
+          <Button
+            title="X"
+            onPress={() => {
+              setPassword(password.slice(0, -1));
+            }}
+          />
+        </View>
         <View
           style={[
             {
@@ -210,10 +233,17 @@ function App({}) {
               borderRadius: innerCircleRadius / 2,
             }}
           />
+          <View
+            ref={centerPointRef}
+            style={{
+              position: 'absolute',
+              width: 1,
+              height: 1,
+              backgroundColor: 'red',
+              zIndex: 1,
+            }}
+          />
         </View>
-
-        <Text style={{marginTop: 100}}>Password</Text>
-        <Text>{password}</Text>
       </View>
     </GestureHandlerRootView>
   );
