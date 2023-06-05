@@ -1,4 +1,4 @@
-import React, {useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   View,
   Dimensions,
@@ -19,21 +19,23 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import {interpolate} from 'react-native-reanimated';
+import {interpolateColor} from 'react-native-reanimated';
 
 //Global Utils
 const {width, height} = Dimensions.get('screen');
-
-const outerCircleRadius = width * 0.9;
-const innerCircleRadius = width * 0.55;
-const midPt = (outerCircleRadius - innerCircleRadius) / 2;
-const centerOfSquare = outerCircleRadius / 2 - 25;
-const mulForRad = 180 / Math.PI;
-
 const NPABS = [];
 const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, -1];
 const offsetAngles = [120, -150, -120, -90, -60, -30, 0, 30, 60, 90];
 const endAngles = [325, 65, 95, 125, 155, 185, 215, 245, 275, 305];
 const correctPassword = 1729;
+
+//Constants for Calc
+const outerCircleRadius = width * 0.9;
+const innerCircleRadius = width * 0.55;
+const midPt = (outerCircleRadius - innerCircleRadius) / 2;
+const centerOfSquare = outerCircleRadius / 2 - 25;
+const mulForRad = 180 / Math.PI;
 
 function App({}) {
   //Utils
@@ -42,6 +44,8 @@ function App({}) {
   const [password, setPassword] = useState('');
   const [currentNumber, setCurrentNumber] = useState(-1);
   const [centerPoint, setCenterPoint] = useState({});
+  const [endColor, setEndColor] = useState('red');
+  const [isDialer, setIsDialer] = useState(0);
   const centerPointRef = useRef();
 
   //Handlers
@@ -69,6 +73,7 @@ function App({}) {
     } else if (_x < 0) {
       angle += 180;
     }
+
     if (angle + offsetAngles[currentNumber] < 0) angle += 360; // To Support Complete Rotation
 
     rotateZAxis.value = angle + offsetAngles[currentNumber];
@@ -81,19 +86,21 @@ function App({}) {
 
   const setAndCheckPassword = password => {
     if (password === correctPassword.toString()) {
-      ToastAndroid.show('Password is Correct 👍', ToastAndroid.SHORT);
-      setPassword('');
-      return;
-    } else if (password.length === 4) {
-      ToastAndroid.show('Password is Incorrect ❌', ToastAndroid.BOTTOM);
-      setPassword('');
-      return;
+      setEndColor('green');
     }
 
+    if (password.length === 4) {
+      setTimeout(() => {
+        setPassword('');
+        setTimeout(() => {
+          setEndColor('red');
+        }, 200);
+      }, 2000);
+    }
     setPassword(password);
   };
 
-  //Rotate Animated Values
+  //Rotate Animated Value, Style and Gesture Handler
   const rotateZAxis = useSharedValue(0);
 
   const rotateAnimatedStyle = useAnimatedStyle(() => {
@@ -125,6 +132,27 @@ function App({}) {
         runOnJS(setAndCheckPassword)(password + currentNumber.toString());
       }
     },
+  });
+
+  //Simplifier Animated Value, Style
+  const opacity = useSharedValue(1);
+
+  const opacityAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: opacity.value,
+    };
+  });
+
+  const kindOfOpacityAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      backgroundColor: interpolateColor(
+        opacity.value,
+        [1, 0],
+        ['black', 'white'],
+      ),
+      borderWidth: interpolate(opacity.value, [1, 0], [2, 0]),
+      borderRadius: interpolate(opacity.value, [1, 0], [outerCircleRadius, 0]),
+    };
   });
 
   //Calculate Hole Position
@@ -161,40 +189,55 @@ function App({}) {
       <View
         style={{
           flex: 1,
-          alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: 'white',
+          marginHorizontal: 20,
         }}>
-        <View style={{marginBottom: 100}}>
-          <Text style={{marginBottom: 20}}>Password: {password}</Text>
-          <Button
-            title="X"
-            onPress={() => {
-              setPassword(password.slice(0, -1));
-            }}
-          />
+        <View style={{marginBottom: 20}}>
+          <Text style={{marginBottom: 20, fontWeight: 'bold', fontSize: 40}}>
+            {'Enter\nPassword'}
+          </Text>
         </View>
         <View
+          style={{
+            flexDirection: 'row',
+            alignSelf: 'flex-end',
+            marginBottom: 100,
+          }}>
+          {[0, 1, 2, 3].map(elem => {
+            return (
+              <AppPasswordBlock
+                key={elem}
+                password={password[elem]}
+                elem={elem}
+                canStartAnimation={password.length === 4}
+                endColor={endColor}
+              />
+            );
+          })}
+        </View>
+        <Animated.View
           style={[
             {
-              backgroundColor: 'black',
               width: outerCircleRadius,
               height: outerCircleRadius,
-              borderRadius: outerCircleRadius,
               alignItems: 'center',
               justifyContent: 'center',
               overflow: 'hidden',
-              borderWidth: 2,
             },
+            kindOfOpacityAnimatedStyle,
           ]}>
           {numbers.map((num, index) => {
-            let adj =
-              Math.cos((index + 1) * (Math.PI / 6)) *
-              ((outerCircleRadius - midPt) / 2);
-            let opp =
-              Math.sin((index + 1) * (Math.PI / 6)) *
-              ((outerCircleRadius - midPt) / 2);
-
+            let adj = 0,
+              opp = 0;
+            if (opacity.value) {
+              adj =
+                Math.cos((index + 1) * (Math.PI / 6)) *
+                ((outerCircleRadius - midPt) / 2);
+              opp =
+                Math.sin((index + 1) * (Math.PI / 6)) *
+                ((outerCircleRadius - midPt) / 2);
+            }
             return (
               <AppNumber
                 key={num}
@@ -207,7 +250,7 @@ function App({}) {
           })}
 
           <PanGestureHandler onGestureEvent={rotationGestureEvent}>
-            <Animated.View style={[rotateAnimatedStyle]}>
+            <Animated.View style={[rotateAnimatedStyle, opacityAnimatedStyle]}>
               <RNHoleView
                 style={[
                   {
@@ -220,18 +263,22 @@ function App({}) {
                     borderWidth: 2,
                   },
                 ]}
-                holes={numberPosition}></RNHoleView>
+                holes={numberPosition}
+              />
             </Animated.View>
           </PanGestureHandler>
-          <View
-            style={{
-              position: 'absolute',
-              width: innerCircleRadius,
-              height: innerCircleRadius,
-              backgroundColor: 'white',
-              borderWidth: 3,
-              borderRadius: innerCircleRadius / 2,
-            }}
+          <Animated.View
+            style={[
+              {
+                position: 'absolute',
+                width: innerCircleRadius,
+                height: innerCircleRadius,
+                backgroundColor: 'white',
+                borderWidth: 3,
+                borderRadius: innerCircleRadius / 2,
+              },
+              opacityAnimatedStyle,
+            ]}
           />
           <View
             ref={centerPointRef}
@@ -241,9 +288,23 @@ function App({}) {
               height: 1,
               backgroundColor: 'red',
               zIndex: 1,
+              opacity: 0,
             }}
           />
-        </View>
+        </Animated.View>
+        <Text
+          onPress={() => {
+            let o = opacity.value ^ 1;
+            opacity.value = withTiming(o);
+          }}
+          style={{
+            marginTop: 40,
+            fontWeight: 'bold',
+            fontSize: 24,
+            alignSelf: 'flex-end',
+          }}>
+          SIMPLIFY
+        </Text>
       </View>
     </GestureHandlerRootView>
   );
@@ -284,16 +345,23 @@ function AppNumber({num, x, y, setPositions}) {
         },
       ]}>
       {num > -1 ? (
-        <Text
-          style={[
-            {
-              fontSize: 30,
-              color: 'white',
-              fontWeight: 'bold',
-            },
-          ]}>
-          {num}
-        </Text>
+        <View
+          style={{
+            backgroundColor: 'black',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}>
+          <Text
+            style={[
+              {
+                fontSize: 28,
+                color: 'white',
+                fontWeight: 'bold',
+              },
+            ]}>
+            {num}
+          </Text>
+        </View>
       ) : (
         <View
           style={{
@@ -305,6 +373,77 @@ function AppNumber({num, x, y, setPositions}) {
         />
       )}
     </Pressable>
+  );
+}
+
+function AppPasswordBlock({password, endColor, canStartAnimation, elem}) {
+  //Password Animated Value and Style
+  const scale = useSharedValue(0);
+  const backgroundColor = useSharedValue(0);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        {
+          scale: scale.value,
+        },
+      ],
+      backgroundColor: interpolateColor(
+        backgroundColor.value,
+        [0, 1],
+        ['white', endColor],
+      ),
+    };
+  });
+
+  useMemo(() => {
+    if (password) {
+      scale.value = withTiming(1);
+    }
+  }, [password]);
+
+  useMemo(() => {
+    if (canStartAnimation) {
+      setTimeout(() => {
+        backgroundColor.value = withTiming(1);
+        setTimeout(() => {
+          scale.value = withTiming(0);
+          backgroundColor.value = withTiming(0);
+        }, (4 - elem) * 500);
+      }, elem * 500);
+    }
+  }, [canStartAnimation]);
+
+  return (
+    <View
+      style={{
+        width: 25,
+        height: 25,
+        backgroundColor: 'black',
+        borderRadius: 12.5,
+        marginLeft: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+      <Animated.View
+        style={[
+          {
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 19,
+            height: 19,
+            borderRadius: 9.5,
+          },
+          animatedStyle,
+        ]}>
+        <Text
+          style={{
+            color: 'white',
+          }}>
+          {password}
+        </Text>
+      </Animated.View>
+    </View>
   );
 }
 
