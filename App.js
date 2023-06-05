@@ -1,12 +1,5 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {
-  View,
-  Dimensions,
-  Text,
-  Pressable,
-  ToastAndroid,
-  Button,
-} from 'react-native';
+import React, {useLayoutEffect, useMemo, useRef, useState} from 'react';
+import {View, Dimensions, Text, Pressable} from 'react-native';
 import {
   GestureHandlerRootView,
   PanGestureHandler,
@@ -18,35 +11,94 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  interpolate,
+  interpolateColor,
 } from 'react-native-reanimated';
-import {interpolate} from 'react-native-reanimated';
-import {interpolateColor} from 'react-native-reanimated';
 
 //Global Utils
 const {width, height} = Dimensions.get('screen');
+const correctPassword = 1729;
+
+//temporary list to store abs positions of numbers
 const NPABS = [];
+
+//Numbers in Dialer and their Calculated Angles
 const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, -1];
 const offsetAngles = [120, -150, -120, -90, -60, -30, 0, 30, 60, 90];
 const endAngles = [325, 65, 95, 125, 155, 185, 215, 245, 275, 305];
-const correctPassword = 1729;
 
-//Constants for Calc
+//Animated Pressable Component
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+//Constants for Calculation
 const outerCircleRadius = width * 0.9;
 const innerCircleRadius = width * 0.55;
 const midPt = (outerCircleRadius - innerCircleRadius) / 2;
 const centerOfSquare = outerCircleRadius / 2 - 25;
 const mulForRad = 180 / Math.PI;
+const squareStaringPosition = (-1 * outerCircleRadius) / 2;
 
 function App({}) {
   //Utils
-  const [numberPosition, setNumbersPosition] = useState([]);
+  const [holePosition, setHolePosition] = useState([]);
   const [numbersPositionABS, setNumbersPositionABS] = useState([]);
   const [password, setPassword] = useState('');
   const [currentNumber, setCurrentNumber] = useState(-1);
   const [centerPoint, setCenterPoint] = useState({});
   const [endColor, setEndColor] = useState('red');
-  const [isDialer, setIsDialer] = useState(0);
+  const [isDialer, setIsDialer] = useState(1);
+  const [isAnimating, setIsAnimating] = useState(0);
   const centerPointRef = useRef();
+
+  //Calculate Hole Position
+  useLayoutEffect(() => {
+    let temp = [],
+      offsetX = 70,
+      offsetY = 30;
+    numbers.map((num, index) => {
+      //Calculating position in such a way that we can use it for both number and hole position
+      if (num === 0) num = 10; // After 9 -> 0(10)
+      else if (num === -1) num = 11; //After 0(10) -> -1(11)
+
+      let adj =
+        Math.cos(num * (Math.PI / 6)) * ((outerCircleRadius - midPt) / 2);
+      let opp =
+        Math.sin(num * (Math.PI / 6)) * ((outerCircleRadius - midPt) / 2);
+
+      temp.push({
+        //positions of holes
+        x: centerOfSquare + adj,
+        y: centerOfSquare - opp,
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+
+        //positions for normal Dialer View
+        numX: adj,
+        numY: opp,
+
+        // positions for simplified View
+        y_sim: squareStaringPosition + offsetY,
+        x_sim: squareStaringPosition + offsetX,
+      });
+
+      if (offsetX === 270) {
+        offsetX = -30;
+        offsetY += 90;
+        if (offsetY === 300) offsetX = 70;
+      }
+      offsetX += 100;
+    });
+
+    //To Calculate Center of the Cirle
+    setTimeout(() => {
+      centerPointRef.current.measure((fx, fy, width, height, px, py) =>
+        setCenterPoint({px: px, py: py}),
+      );
+    }, 0);
+
+    setHolePosition([...temp]);
+  }, []);
 
   //Handlers
   const findTheNearestNumber = event => {
@@ -56,8 +108,10 @@ function App({}) {
         elem.absoluteX - 30 < event.absoluteX &&
         elem.absoluteY + 30 > event.absoluteY &&
         elem.absoluteY - 30 < event.absoluteY
-      )
+      ) {
         setCurrentNumber(elem.number);
+        if (elem.number === -1) setAndCheckPassword('');
+      }
     });
   };
 
@@ -84,20 +138,29 @@ function App({}) {
     setCurrentNumber(-1);
   };
 
-  const setAndCheckPassword = password => {
-    if (password === correctPassword.toString()) {
+  const setAndCheckPassword = number => {
+    if (number === '') {
+      setPassword(password.slice(0, -1));
+      return;
+    }
+
+    if (password + number === correctPassword.toString()) {
       setEndColor('green');
     }
 
-    if (password.length === 4) {
+    if (password + number.length === 4) {
+      setIsAnimating(1); // To Ensure Inconsistency
+
+      //TimeOut to wait for the Animation to Complete
       setTimeout(() => {
         setPassword('');
         setTimeout(() => {
           setEndColor('red');
+          setIsAnimating(0);
         }, 200);
       }, 2000);
     }
-    setPassword(password);
+    setPassword(password + number);
   };
 
   //Rotate Animated Value, Style and Gesture Handler
@@ -115,21 +178,30 @@ function App({}) {
 
   const rotationGestureEvent = useAnimatedGestureHandler({
     onStart: (e, c) => {
-      c.isEnd = false;
-      if (currentNumber == -1) runOnJS(findTheNearestNumber)(e);
+      if (!isAnimating) {
+        c.isEnd = false;
+        runOnJS(findTheNearestNumber)(e);
+      }
     },
     onActive: (e, c) => {
-      if (currentNumber != -1 && rotateZAxis.value < endAngles[currentNumber]) {
-        runOnJS(getAngle)(e);
-        if (c.isEnd) c.isEnd = false;
-      } else {
-        if (!c.isEnd) c.isEnd = true;
+      if (!isAnimating) {
+        if (
+          currentNumber != -1 &&
+          rotateZAxis.value < endAngles[currentNumber]
+        ) {
+          runOnJS(getAngle)(e);
+          if (c.isEnd) c.isEnd = false;
+        } else {
+          if (!c.isEnd) c.isEnd = true;
+        }
       }
     },
     onEnd: (e, c) => {
-      runOnJS(setAngle)(0);
-      if (currentNumber != -1 && c.isEnd) {
-        runOnJS(setAndCheckPassword)(password + currentNumber.toString());
+      if (!isAnimating) {
+        runOnJS(setAngle)(0);
+        if (currentNumber !== -1 && c.isEnd) {
+          runOnJS(setAndCheckPassword)(currentNumber.toString());
+        }
       }
     },
   });
@@ -155,34 +227,17 @@ function App({}) {
     };
   });
 
-  //Calculate Hole Position
-  useMemo(() => {
-    let temp = [];
-    numbers.map((num, index) => {
-      let adj =
-        Math.cos((index + 1) * (Math.PI / 6)) *
-        ((outerCircleRadius - midPt) / 2);
-      let opp =
-        Math.sin((index + 1) * (Math.PI / 6)) *
-        ((outerCircleRadius - midPt) / 2);
-
-      temp.push({
-        x: centerOfSquare + adj,
-        y: centerOfSquare - opp,
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-      });
-    });
-
-    setTimeout(() => {
-      centerPointRef.current.measure((fx, fy, width, height, px, py) =>
-        setCenterPoint({px: px, py: py}),
-      );
-    }, 0);
-
-    setNumbersPosition([...temp]);
-  }, []);
+  const positionAndScaleAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      marginBottom: interpolate(opacity.value, [1, 0], [100, 75]),
+      transform: [
+        {
+          scale: interpolate(opacity.value, [1, 0], [1, 1.2]),
+        },
+      ],
+      marginRight: interpolate(opacity.value, [1, 0], [0, width / 3.5]),
+    };
+  });
 
   return (
     <GestureHandlerRootView style={{flex: 1}}>
@@ -191,19 +246,21 @@ function App({}) {
           flex: 1,
           justifyContent: 'center',
           backgroundColor: 'white',
-          marginHorizontal: 20,
+          paddingHorizontal: 20,
         }}>
         <View style={{marginBottom: 20}}>
           <Text style={{marginBottom: 20, fontWeight: 'bold', fontSize: 40}}>
             {'Enter\nPassword'}
           </Text>
         </View>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignSelf: 'flex-end',
-            marginBottom: 100,
-          }}>
+        <Animated.View
+          style={[
+            {
+              flexDirection: 'row',
+              alignSelf: 'flex-end',
+            },
+            positionAndScaleAnimatedStyle,
+          ]}>
           {[0, 1, 2, 3].map(elem => {
             return (
               <AppPasswordBlock
@@ -215,7 +272,7 @@ function App({}) {
               />
             );
           })}
-        </View>
+        </Animated.View>
         <Animated.View
           style={[
             {
@@ -227,59 +284,61 @@ function App({}) {
             },
             kindOfOpacityAnimatedStyle,
           ]}>
-          {numbers.map((num, index) => {
-            let adj = 0,
-              opp = 0;
-            if (opacity.value) {
-              adj =
-                Math.cos((index + 1) * (Math.PI / 6)) *
-                ((outerCircleRadius - midPt) / 2);
-              opp =
-                Math.sin((index + 1) * (Math.PI / 6)) *
-                ((outerCircleRadius - midPt) / 2);
-            }
-            return (
-              <AppNumber
-                key={num}
-                num={num}
-                x={adj}
-                y={opp}
-                setPositions={setNumbersPositionABS}
-              />
-            );
-          })}
+          {holePosition.length !== 0 &&
+            numbers.map((num, index) => {
+              return (
+                <AppNumber
+                  key={num}
+                  num={num}
+                  x={holePosition[index].numX}
+                  y={holePosition[index].numY}
+                  x_sim={holePosition[index].x_sim}
+                  y_sim={holePosition[index].y_sim}
+                  setPositions={setNumbersPositionABS}
+                  isDialer={isDialer}
+                  setAndCheckPassword={setAndCheckPassword}
+                />
+              );
+            })}
 
-          <PanGestureHandler onGestureEvent={rotationGestureEvent}>
-            <Animated.View style={[rotateAnimatedStyle, opacityAnimatedStyle]}>
-              <RNHoleView
-                style={[
-                  {
-                    width: outerCircleRadius,
-                    height: outerCircleRadius,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    backgroundColor: 'white',
-                    borderRadius: outerCircleRadius / 2,
-                    borderWidth: 2,
-                  },
-                ]}
-                holes={numberPosition}
-              />
-            </Animated.View>
-          </PanGestureHandler>
-          <Animated.View
-            style={[
-              {
-                position: 'absolute',
-                width: innerCircleRadius,
-                height: innerCircleRadius,
-                backgroundColor: 'white',
-                borderWidth: 3,
-                borderRadius: innerCircleRadius / 2,
-              },
-              opacityAnimatedStyle,
-            ]}
-          />
+          {isDialer ? (
+            <PanGestureHandler onGestureEvent={rotationGestureEvent}>
+              <Animated.View
+                style={[rotateAnimatedStyle, opacityAnimatedStyle]}>
+                <RNHoleView
+                  style={[
+                    {
+                      width: outerCircleRadius,
+                      height: outerCircleRadius,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      backgroundColor: 'white',
+                      borderRadius: outerCircleRadius / 2,
+                      borderWidth: 2,
+                    },
+                  ]}
+                  holes={holePosition}
+                />
+              </Animated.View>
+            </PanGestureHandler>
+          ) : null}
+
+          {isDialer ? (
+            <Animated.View
+              style={[
+                {
+                  position: 'absolute',
+                  width: innerCircleRadius,
+                  height: innerCircleRadius,
+                  backgroundColor: 'white',
+                  borderWidth: 3,
+                  borderRadius: innerCircleRadius / 2,
+                },
+                opacityAnimatedStyle,
+              ]}
+            />
+          ) : null}
+
           <View
             ref={centerPointRef}
             style={{
@@ -294,8 +353,23 @@ function App({}) {
         </Animated.View>
         <Text
           onPress={() => {
-            let o = opacity.value ^ 1;
-            opacity.value = withTiming(o);
+            if (!isAnimating) {
+              setIsAnimating(1);
+              let o = opacity.value ^ 1; //Toggleing Two Views
+
+              if (!o) {
+                opacity.value = withTiming(o);
+              } else {
+                setTimeout(() => {
+                  opacity.value = withTiming(o); // Wait Time for Animation to Happen
+                }, 500);
+              }
+              setIsDialer(isDialer ^ 1);
+
+              setTimeout(() => {
+                setIsAnimating(0);
+              }, 750);
+            }
           }}
           style={{
             marginTop: 40,
@@ -310,47 +384,89 @@ function App({}) {
   );
 }
 
-function AppNumber({num, x, y, setPositions}) {
+function AppNumber({
+  num,
+  x,
+  y,
+  setPositions,
+  isDialer,
+  x_sim,
+  y_sim,
+  setAndCheckPassword,
+  password,
+}) {
+  //Utils
   const ref = useRef();
+  const [size, setSize] = useState({});
 
+  //Animated Value, Style to Reposition Numbers
+  const position = useSharedValue(0);
+
+  const positionAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        {
+          translateX: interpolate(position.value, [0, 1], [x, x_sim]),
+        },
+        {
+          translateY: interpolate(position.value, [0, 1], [-y, y_sim]),
+        },
+      ],
+    };
+  });
+
+  //Calculating Each Number in Dialer's Position
   useMemo(() => {
     setTimeout(() => {
+      //Below Approach makes sures that the too many re-renders are happened
       ref.current.measure((fx, fy, width, height, px, py) => {
+        //Storing in Temp Global Variable
         NPABS.push({
           number: num,
           absoluteX: px,
           absoluteY: py,
         });
 
-        if (num === 0) setPositions([...NPABS]);
+        if (num === -1) setPositions([...NPABS]); //Setting in last rendering
       });
     }, 0);
   }, []);
 
+  // Since when the number in dialer has width it is inaccurately detected in Pan Gesture
+  // So, size is only setted at the time of simplification
+
+  //Used timeout to enhance Animation
+  useMemo(() => {
+    if (!isDialer) {
+      setSize({width: 60, height: 60, borderRadius: 30});
+      setTimeout(() => {
+        position.value = withTiming(1);
+      }, 500);
+    } else {
+      position.value = withTiming(0);
+      setTimeout(() => {
+        setSize({});
+      }, 1000);
+    }
+  }, [isDialer]);
+
   return (
-    <Pressable
+    <AnimatedPressable
       ref={ref}
       onPress={() => {
-        console.log(num);
+        setAndCheckPassword(num === -1 ? '' : num.toString());
       }}
-      style={[
-        {position: 'absolute'},
-        {
-          transform: [
-            {
-              translateX: x,
-            },
-            {translateY: -y},
-          ],
-        },
-      ]}>
-      {num > -1 ? (
-        <View
-          style={{
+      style={[{position: 'absolute'}, positionAnimatedStyle]}>
+      <Animated.View
+        style={[
+          {
             backgroundColor: 'black',
             justifyContent: 'center',
             alignItems: 'center',
-          }}>
+          },
+          size,
+        ]}>
+        {num > -1 ? (
           <Text
             style={[
               {
@@ -361,18 +477,20 @@ function AppNumber({num, x, y, setPositions}) {
             ]}>
             {num}
           </Text>
-        </View>
-      ) : (
-        <View
-          style={{
-            width: 25,
-            height: 25,
-            backgroundColor: 'white',
-            borderRadius: 12.5,
-          }}
-        />
-      )}
-    </Pressable>
+        ) : (
+          <View
+            style={[
+              {
+                width: 25,
+                height: 25,
+                backgroundColor: 'white',
+                borderRadius: 12.5,
+              },
+            ]}
+          />
+        )}
+      </Animated.View>
+    </AnimatedPressable>
   );
 }
 
@@ -396,12 +514,16 @@ function AppPasswordBlock({password, endColor, canStartAnimation, elem}) {
     };
   });
 
+  //Memo to run scale animation once even for many rerender until password changes
   useMemo(() => {
     if (password) {
       scale.value = withTiming(1);
+    } else if (scale.value) {
+      scale.value = withTiming(0);
     }
   }, [password]);
 
+  //Enchanced Animation using Calculated Timeout for 2000ms which is utilized to reset the password at line 162
   useMemo(() => {
     if (canStartAnimation) {
       setTimeout(() => {
