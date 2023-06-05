@@ -148,18 +148,6 @@ function App({}) {
       setEndColor('green');
     }
 
-    if (password + number.length === 4) {
-      setIsAnimating(1); // To Ensure Inconsistency
-
-      //TimeOut to wait for the Animation to Complete
-      setTimeout(() => {
-        setPassword('');
-        setTimeout(() => {
-          setEndColor('red');
-          setIsAnimating(0);
-        }, 200);
-      }, 2000);
-    }
     setPassword(password + number);
   };
 
@@ -178,13 +166,13 @@ function App({}) {
 
   const rotationGestureEvent = useAnimatedGestureHandler({
     onStart: (e, c) => {
-      if (!isAnimating) {
+      if (!isAnimating && password.length < 4) {
         c.isEnd = false;
         runOnJS(findTheNearestNumber)(e);
       }
     },
     onActive: (e, c) => {
-      if (!isAnimating) {
+      if (!isAnimating && password.length < 4) {
         if (
           currentNumber != -1 &&
           rotateZAxis.value < endAngles[currentNumber]
@@ -197,7 +185,7 @@ function App({}) {
       }
     },
     onEnd: (e, c) => {
-      if (!isAnimating) {
+      if (!isAnimating && password.length < 4) {
         runOnJS(setAngle)(0);
         if (currentNumber !== -1 && c.isEnd) {
           runOnJS(setAndCheckPassword)(currentNumber.toString());
@@ -269,6 +257,8 @@ function App({}) {
                 elem={elem}
                 canStartAnimation={password.length === 4}
                 endColor={endColor}
+                setEndColor={setEndColor}
+                setPassword={setPassword}
               />
             );
           })}
@@ -353,7 +343,7 @@ function App({}) {
         </Animated.View>
         <Text
           onPress={() => {
-            if (!isAnimating) {
+            if (!isAnimating && password.length < 4) {
               setIsAnimating(1);
               let o = opacity.value ^ 1; //Toggleing Two Views
 
@@ -494,7 +484,14 @@ function AppNumber({
   );
 }
 
-function AppPasswordBlock({password, endColor, canStartAnimation, elem}) {
+function AppPasswordBlock({
+  password,
+  endColor,
+  canStartAnimation,
+  elem,
+  setPassword,
+  setEndColor,
+}) {
   //Password Animated Value and Style
   const scale = useSharedValue(0);
   const backgroundColor = useSharedValue(0);
@@ -523,7 +520,7 @@ function AppPasswordBlock({password, endColor, canStartAnimation, elem}) {
     }
   }, [password]);
 
-  //Enchanced Animation using Calculated Timeout for 2000ms which is utilized to reset the password at line 162
+  //Enchanced Animation using Calculated Timeout for 2000ms
   useMemo(() => {
     if (canStartAnimation) {
       setTimeout(() => {
@@ -531,6 +528,8 @@ function AppPasswordBlock({password, endColor, canStartAnimation, elem}) {
         setTimeout(() => {
           scale.value = withTiming(0);
           backgroundColor.value = withTiming(0);
+          setPassword('');
+          setEndColor('red');
         }, (4 - elem) * 500);
       }, elem * 500);
     }
