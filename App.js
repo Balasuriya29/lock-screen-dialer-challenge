@@ -128,7 +128,13 @@ function App({}) {
       angle += 180;
     }
 
-    if (angle + offsetAngles[currentNumber] < 0) angle += 360; // To Support Complete Rotation
+    // To Support Rotation after 270 for 9 and 0
+    if (angle + offsetAngles[currentNumber] < 0) {
+      //To allow on 9 and 0
+      if (currentNumber % 9 === 0 && rotateZAxis.value >= 260) {
+        angle += 360;
+      } else return;
+    }
 
     rotateZAxis.value = angle + offsetAngles[currentNumber];
   };
@@ -210,7 +216,7 @@ function App({}) {
         [1, 0],
         ['black', 'white'],
       ),
-      borderWidth: interpolate(opacity.value, [1, 0], [2, 0]),
+      borderWidth: interpolate(opacity.value, [1, 0.99], [2, 0]),
       borderRadius: interpolate(opacity.value, [1, 0], [outerCircleRadius, 0]),
     };
   });
@@ -383,7 +389,6 @@ function AppNumber({
   x_sim,
   y_sim,
   setAndCheckPassword,
-  password,
 }) {
   //Utils
   const ref = useRef();
