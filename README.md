@@ -27,12 +27,6 @@ React Native - javascript
  - Synchronizing setTimeout for Smoother Animations
 
 
-## Screenshots
-
-![img_1](https://github.com/Balasuriya29/lock-screen-dialer-challenge/assets/100402643/dfc4b64b-479e-4a68-8009-13accc847db0)
-![img_2](https://github.com/Balasuriya29/lock-screen-dialer-challenge/assets/100402643/ccff7a08-2438-47b7-8c7c-7bb878556cc2)
-
-
 ## Demo
 
 
